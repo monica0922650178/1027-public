@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>文件轉換小幫手 - 辦公室專用工具</title>
+  
+  <!-- 引入真實轉換所需之純前端開源核心函式庫 (無模擬、無假按鈕) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --border: #e2e8f0;
+      --text-main: #1e293b;
+      --text-muted: #64748b;
+      --success: #10b981;
+      --danger: #ef4444;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+    body { background-color: var(--bg); color: var(--text-main); line-height: 1.6; padding: 30px 15px; }
+    .container { max-width: 780px; margin: 0 auto; background: var(--surface); padding: 32px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -2px rgba(0,0,0,0.05); }
+
+    header { text-align: center; margin-bottom: 24px; border-bottom: 1px solid var(--border); padding-bottom: 16px; }
+    header h1 { font-size: 1.6rem; color: var(--primary); margin-bottom: 6px; }
+    header p { color: var(--text-muted); font-size: 0.95rem; }
+    .security-badge { display: inline-block; background: #ecfdf5; color: #065f46; font-size: 0.8rem; padding: 2px 10px; border-radius: 999px; margin-top: 6px; border: 1px solid #a7f3d0; }
+
+    /* 上傳區塊 */
+    .drop-zone {
+      border: 2px dashed #cbd5e1; border-radius: 10px; padding: 32px 20px; text-align: center;
+      background: #f1f5f9; cursor: pointer; transition: all 0.2s ease;
+    }
+    .drop-zone:hover, .drop-zone.dragover { border-color: var(--primary); background: #eff6ff; }
+    .drop-zone input { display: none; }
+    .drop-icon { font-size: 38px; color: var(--primary); margin-bottom: 8px; }
+
+    /* 檔案資訊與預覽 */
+    .file-card { margin-top: 20px; border: 1px solid var(--border); border-radius: 8px; padding: 16px; display: none; }
+    .file-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .file-name { font-weight: 600; color: var(--text-main); word-break: break-all; }
+    .file-size { font-size: 0.85rem; color: var(--text-muted); }
+    .btn-remove { background: none; border: none; color: var(--danger); cursor: pointer; font-size: 0.9rem; font-weight: 500; }
+
+    .preview-container { text-align: center; max-height: 220px; overflow: hidden; border-radius: 6px; background: #e2e8f0; margin-bottom: 16px; }
+    .preview-container canvas, .preview-container img { max-width: 100%; max-height: 220px; object-fit: contain; }
+
+    /* 控制選單 */
+    .control-group { margin-bottom: 16px; }
+    .control-group label { display: block; font-weight: 600; margin-bottom: 6px; font-size: 0.95rem; }
+    select { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.95rem; outline: none; background: #fff; }
+
+    /* 按鈕與進度 */
+    .btn-primary { width: 100%; background: var(--primary); color: #fff; padding: 12px; border: none; border-radius: 6px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: 0.2s; }
+    .btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+    .btn-primary:disabled { background: #94a3b8; cursor: not-allowed; }
+
+    .progress-box { margin-top: 20px; display: none; }
+    .progress-bar-bg { width: 100%; background: #e2e8f0; border-radius: 6px; height: 10px; overflow: hidden; margin-bottom: 8px; }
+    .progress-bar-fill { width: 0%; height: 100%; background: var(--primary); transition: width 0.2s; }
+    .progress-text { font-size: 0.85rem; color: var(--text-muted); text-align: right; }
+
+    .alert { padding: 12px; border-radius: 6px; margin-top: 16px; font-size: 0.9rem; display: none; }
+    .alert-error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+    .alert-success { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; text-align: center; }
+    .btn-download { display: inline-block; margin-top: 8px; background: var(--success); color: white; padding: 8px 24px; text-decoration: none; border-radius: 6px; font-weight: 600; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <h1>文件轉換小幫手</h1>
+    <p>支援 PDF 及 JPG / PNG 圖片轉換為 Word、PPT 與 PDF</p>
+    <span class="security-badge">🔒 100% 瀏覽器本機記憶體處理，文件絕不外傳伺服器</span>
+  </header>
+
+  <!-- 上傳區塊 -->
+  <div class="drop-zone" id="dropZone">
+    <div class="drop-icon">📄</div>
+    <p style="font-weight: 600;">拖曳檔案至此，或點擊選擇檔案</p>
+    <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 4px;">支援格式：.pdf、.jpg、.jpeg、.png</p>
+    <input type="file" id="fileInput" accept=".pdf, .jpg, .jpeg, .png">
+  </div>
+
+  <!-- 檔案詳細資料與轉換面板 -->
+  <div class="file-card" id="fileCard">
+    <div class="file-header">
+      <div>
+        <div class="file-name" id="fileName"></div>
+        <div class="file-size" id="fileSize"></div>
+      </div>
+      <button class="btn-remove" id="btnRemove">清除檔案</button>
+    </div>
+
+    <!-- 預覽 -->
+    <div class="preview-container" id="previewContainer"></div>
+
+    <!-- 格式選擇 -->
+    <div class="control-group">
+      <label for="targetFormat">請選擇欲轉換的輸出格式：</label>
+      <select id="targetFormat"></select>
+    </div>
+
+    <button class="btn-primary" id="btnConvert">開始真正轉換</button>
+  </div>
+
+  <!-- 進度與狀態提示 -->
+  <div class="progress-box" id="progressBox">
+    <div class="progress-bar-bg">
+      <div class="progress-bar-fill" id="progressBar"></div>
+    </div>
+    <div class="progress-text" id="progressStatus">正在準備轉換...</div>
+  </div>
+
+  <div class="alert alert-error" id="alertError"></div>
+  <div class="alert alert-success" id="alertSuccess">
+    <div id="successMsg">轉換成功！</div>
+    <a href="#" class="btn-download" id="downloadLink" download>下載檔案</a>
+  </div>
+</div>
+
+<script>
+  // 設定 PDF.js Worker
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+  const dropZone = document.getElementById('dropZone');
+  const fileInput = document.getElementById('fileInput');
+  const fileCard = document.getElementById('fileCard');
+  const fileName = document.getElementById('fileName');
+  const fileSize = document.getElementById('fileSize');
+  const previewContainer = document.getElementById('previewContainer');
+  const targetFormat = document.getElementById('targetFormat');
+  const btnConvert = document.getElementById('btnConvert');
+  const btnRemove = document.getElementById('btnRemove');
+  const progressBox = document.getElementById('progressBox');
+  const progressBar = document.getElementById('progressBar');
+  const progressStatus = document.getElementById('progressStatus');
+  const alertError = document.getElementById('alertError');
+  const alertSuccess = document.getElementById('alertSuccess');
+  const downloadLink = document.getElementById('downloadLink');
+
+  let currentFile = null;
+  let currentFileType = null; // 'pdf' 或 'image'
+
+  // 1. 拖曳與檔案上傳事件
+  dropZone.addEventListener('click', () => fileInput.click());
+  dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener('change', (e) => {
+    if (e.target.files.length > 0) handleFile(e.target.files[0]);
+  });
+
+  // 2. 檔案驗證與預覽
+  async function handleFile(file) {
+    resetState();
+    const validExtensions = ['pdf', 'jpg', 'jpeg', 'png'];
+    const ext = file.name.split('.').pop().toLowerCase();
+    
+    if (!validExtensions.includes(ext)) {
+      showError('檔案格式不支援！請上傳 PDF、JPG、JPEG 或 PNG 格式。');
+      return;
+    }
+
+    currentFile = file;
+    currentFileType = ext === 'pdf' ? 'pdf' : 'image';
+    fileName.textContent = file.name;
+    fileSize.textContent = `${(file.size / (1024 * 1024)).toFixed(2)} MB`;
+
+    // 依類型填充目標格式
+    targetFormat.innerHTML = '';
+    if (currentFileType === 'pdf') {
+      targetFormat.innerHTML = `
+        <option value="pdf_to_docx">Word 文件 (.docx) - 文字擷取版</option>
+        <option value="pdf_to_pptx">PowerPoint 簡報 (.pptx) - 頁面轉投影片</option>
+      `;
+      await previewPDF(file);
+    } else {
+      targetFormat.innerHTML = `
+        <option value="img_ocr_docx">Word 文件 (.docx) - 繁中 OCR 光學字元辨識</option>
+        <option value="img_to_pdf">PDF 文件 (.pdf) - 圖片封裝</option>
+      `;
+      previewImage(file);
+    }
+
+    dropZone.style.display = 'none';
+    fileCard.style.display = 'block';
+  }
+
+  function previewImage(file) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      previewContainer.innerHTML = `<img src="${e.target.result}" alt="預覽圖">`;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function previewPDF(file) {
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      const page = await pdf.getPage(1);
+      const viewport = page.getViewport({ scale: 1.0 });
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      canvas.height = viewport.height;
+      canvas.width = viewport.width;
+
+      await page.render({ canvasContext: context, viewport }).promise;
+      previewContainer.innerHTML = '';
+      previewContainer.appendChild(canvas);
+    } catch (err) {
+      previewContainer.innerHTML = '<p style="padding: 20px; color: var(--text-muted);">PDF 預覽無法載入，但不影響後續轉換。</p>';
+    }
+  }
+
+  // 3. 轉換總調度
+  btnConvert.addEventListener('click', async () => {
+    if (!currentFile) return;
+    const task = targetFormat.value;
+    btnConvert.disabled = true;
+    progressBox.style.display = 'block';
+    hideAlerts();
+
+    try {
+      let resultBlob = null;
+      let outputExt = '';
+
+      if (task === 'pdf_to_docx') {
+        outputExt = 'docx';
+        resultBlob = await convertPdfToDocx(currentFile);
+      } else if (task === 'pdf_to_pptx') {
+        outputExt = 'pptx';
+        resultBlob = await convertPdfToPptx(currentFile);
+      } else if (task === 'img_ocr_docx') {
+        outputExt = 'docx';
+        resultBlob = await convertImageToDocxOCR(currentFile);
+      } else if (task === 'img_to_pdf') {
+        outputExt = 'pdf';
+        resultBlob = await convertImageToPdf(currentFile);
+      }
+
+      showSuccess(resultBlob, outputExt);
+    } catch (err) {
+      console.error(err);
+      showError(`轉換失敗: ${err.message || '未知錯誤，請確認檔案結構是否完整'}`);
+    } finally {
+      btnConvert.disabled = false;
+      progressBox.style.display = 'none';
+    }
+  });
+
+  // ========== 實體轉換核心功能實作 ==========
+
+  // 流程 1：PDF 文字擷取並產生真實 DOCX
+  async function convertPdfToDocx(file) {
+    updateProgress(10, '正在讀取 PDF 文件內容...');
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const docParagraphs = [];
+
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      updateProgress(10 + Math.round((pageNum / pdf.numPages) * 70), `正在解析第 ${pageNum} / ${pdf.numPages} 頁文字...`);
+      const page = await pdf.getPage(pageNum);
+      const textContent = await page.getTextContent();
+      const pageStrings = textContent.items.map(item => item.str);
+      const fullText = pageStrings.join(' ');
+
+      // 分段落寫入 Word
+      const lines = fullText.split('\n');
+      lines.forEach(line => {
+        if (line.trim().length > 0) {
+          docParagraphs.push(new docx.Paragraph({
+            children: [new docx.TextRun({ text: line, size: 24 })],
+            spacing: { after: 120 }
+          }));
+        }
+      });
+      // 頁面分隔
+      if (pageNum < pdf.numPages) {
+        docParagraphs.push(new docx.Paragraph({ children: [new docx.PageBreak()] }));
+      }
+    }
+
+    if (docParagraphs.length === 0) {
+      throw new Error('此 PDF 未包含可選取的純文字（可能為純圖掃描檔），建議使用圖片 OCR 功能轉換。');
+    }
+
+    updateProgress(90, '正在封裝產生 Word (.docx) 檔案...');
+    const doc = new docx.Document({
+      sections: [{ properties: {}, children: docParagraphs }]
+    });
+
+    return await docx.Packer.toBlob(doc);
+  }
+
+  // 流程 2：圖片 OCR 繁體中文並輸出 DOCX
+  async function convertImageToDocxOCR(file) {
+    updateProgress(15, '正在啟動繁體中文 OCR 光學辨識引擎...');
+    
+    // 初始化 Tesseract Worker，指定 chi_tra (繁體中文) 與 eng (英文)
+    const worker = await Tesseract.createWorker('chi_tra+eng', 1, {
+      logger: m => {
+        if (m.status === 'recognizing text') {
+          const pct = Math.round(m.progress * 100);
+          updateProgress(20 + Math.round(pct * 0.7), `繁體中文辨識中：${pct}%`);
+        } else {
+          updateProgress(20, `OCR 引擎狀態：${m.status}`);
+        }
+      }
+    });
+
+    const ret = await worker.recognize(file);
+    await worker.terminate();
+
+    const ocrText = ret.data.text;
+    if (!ocrText || ocrText.trim().length === 0) {
+      throw new Error('未能自圖片中辨識出任何文字，請確認圖片清晰度。');
+    }
+
+    updateProgress(92, '正在將辨識結果封裝為 Word (.docx)...');
+    const lines = ocrText.split('\n');
+    const paragraphs = lines.map(line => new docx.Paragraph({
+      children: [new docx.TextRun({ text: line, size: 24 })],
+      spacing: { after: 100 }
+    }));
+
+    const doc = new docx.Document({
+      sections: [{ properties: {}, children: paragraphs }]
+    });
+
+    return await docx.Packer.toBlob(doc);
+  }
+
+  // 流程 3：PDF 每頁渲染為 PPTX 簡報
+  async function convertPdfToPptx(file) {
+    updateProgress(10, '正在準備產生 PPTX...');
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const pptx = new PptxGenJS();
+    pptx.layout = 'LAYOUT_16x9';
+
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      updateProgress(10 + Math.round((pageNum / pdf.numPages) * 75), `正在將 PDF 第 ${pageNum} / ${pdf.numPages} 頁轉為投影片...`);
+      const page = await pdf.getPage(pageNum);
+      const viewport = page.getViewport({ scale: 2.0 }); // 高解析度渲染
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const ctx = canvas.getContext('2d');
+      await page.render({ canvasContext: ctx, viewport }).promise;
+
+      const imgDataUrl = canvas.toDataURL('image/png');
+      const slide = pptx.addSlide();
+      slide.addImage({ data: imgDataUrl, x: 0, y: 0, w: '100%', h: '100%' });
+    }
+
+    updateProgress(95, '正在封裝 PPTX 檔案...');
+    return await pptx.write({ outputType: 'blob' });
+  }
+
+  // 流程 4：圖片轉為 PDF
+  async function convertImageToPdf(file) {
+    updateProgress(50, '正在將圖片轉換為 PDF 格式...');
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    const reader = new FileReader();
+
+    return new Promise((resolve, reject) => {
+      reader.onload = function(e) {
+        try {
+          const img = new Image();
+          img.src = e.target.result;
+          img.onload = function() {
+            const pageWidth = doc.internal.pageSize.getWidth();
+            const pageHeight = doc.internal.pageSize.getHeight();
+            // 等比縮放適應版面
+            const ratio = Math.min(pageWidth / img.width, pageHeight / img.height);
+            const w = img.width * ratio;
+            const h = img.height * ratio;
+            doc.addImage(img, 'JPEG', (pageWidth - w) / 2, (pageHeight - h) / 2, w, h);
+            resolve(doc.output('blob'));
+          };
+        } catch(err) {
+          reject(err);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // ========== UI 與狀態輔助 ==========
+  function updateProgress(percent, text) {
+    if (percent !== null) progressBar.style.width = `${percent}%`;
+    if (text) progressStatus.textContent = text;
+  }
+
+  function showSuccess(blob, ext) {
+    const originalBaseName = currentFile.name.substring(0, currentFile.name.lastIndexOf('.')) || 'converted';
+    const finalName = `${originalBaseName}_converted.${ext}`;
+    const url = URL.createObjectURL(blob);
+    
+    downloadLink.href = url;
+    downloadLink.download = finalName;
+    downloadLink.textContent = `點擊下載：${finalName}`;
+    alertSuccess.style.display = 'block';
+  }
+
+  function showError(msg) {
+    alertError.textContent = msg;
+    alertError.style.display = 'block';
+  }
+
+  function hideAlerts() {
+    alertError.style.display = 'none';
+    alertSuccess.style.display = 'none';
+  }
+
+  function resetState() {
+    hideAlerts();
+    currentFile = null;
+    fileInput.value = '';
+    previewContainer.innerHTML = '';
+  }
+
+  btnRemove.addEventListener('click', () => {
+    resetState();
+    fileCard.style.display = 'none';
+    dropZone.style.display = 'block';
+  });
+</script>
+
+</body>
+</html>
